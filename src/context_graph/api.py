@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 from flask import Flask, jsonify, request
@@ -15,17 +16,31 @@ from .skeletonizer import skeletonize_file
 from .watcher import ProjectWatcher
 
 
+def _project_db_path(root: str) -> Path:
+    """Return per-project DB path: ~/.context_graph/projects/<hash>/context.db"""
+    h = hashlib.sha256(root.encode()).hexdigest()[:16]
+    return Path.home() / ".context_graph" / "projects" / h / "context.db"
+
+
 def create_app(db: Database | None = None) -> Flask:
     """Create and configure the Flask application."""
     app = Flask(__name__)
 
     # State: registered projects with their watchers
     projects: dict[str, ProjectWatcher] = {}
+    # Cache of per-project databases (keyed by resolved root path)
+    dbs: dict[str, Database] = {}
 
-    def _get_db() -> Database:
+    def _get_db(root: str | None = None) -> Database:
         if db is not None:
             return db
-        # Default: use in-memory for testing
+        if root:
+            if root not in dbs:
+                db_path = _project_db_path(root)
+                db_path.parent.mkdir(parents=True, exist_ok=True)
+                dbs[root] = Database(str(db_path))
+            return dbs[root]
+        # Fallback: global in-memory DB
         if not hasattr(app, "_db"):
             app._db = Database()
         return app._db
@@ -46,7 +61,7 @@ def create_app(db: Database | None = None) -> Flask:
         if project_root in projects:
             return jsonify({"message": "already registered", "root": project_root})
 
-        project_db = _get_db()
+        project_db = _get_db(project_root)
         watcher = ProjectWatcher(project_db, project_root)
         file_count = watcher.index_now()
         watcher.start()
@@ -73,7 +88,10 @@ def create_app(db: Database | None = None) -> Flask:
 
     @app.route("/nodes")
     def list_nodes():
-        d = _get_db()
+        root = request.args.get("root")
+        if root:
+            root = str(Path(root).resolve())
+        d = _get_db(root)
         file_path = request.args.get("file")
         kind = request.args.get("kind")
         name = request.args.get("name")
@@ -88,7 +106,10 @@ def create_app(db: Database | None = None) -> Flask:
 
     @app.route("/nodes/<path:node_id>")
     def get_node(node_id):
-        d = _get_db()
+        root = request.args.get("root")
+        if root:
+            root = str(Path(root).resolve())
+        d = _get_db(root)
         node = d.get_node(node_id)
         if node is None:
             return jsonify({"error": "not found"}), 404
@@ -103,7 +124,10 @@ def create_app(db: Database | None = None) -> Flask:
 
     @app.route("/nodes/<path:node_id>/edges")
     def get_node_edges(node_id):
-        d = _get_db()
+        root = request.args.get("root")
+        if root:
+            root = str(Path(root).resolve())
+        d = _get_db(root)
         direction = request.args.get("direction", "both")
         kind = request.args.get("kind")
 
@@ -135,7 +159,10 @@ def create_app(db: Database | None = None) -> Flask:
 
     @app.route("/capsule/<path:node_id>")
     def capsule(node_id):
-        d = _get_db()
+        root = request.args.get("root")
+        if root:
+            root = str(Path(root).resolve())
+        d = _get_db(root)
         depth = request.args.get("depth", 1, type=int)
         result = generate_capsule(d, node_id, depth=depth)
         if result is None:
@@ -146,9 +173,14 @@ def create_app(db: Database | None = None) -> Flask:
 
     @app.route("/observations", methods=["POST"])
     def create_observation():
-        d = _get_db()
-        store = ObservationStore(d)
         data = request.get_json(force=True)
+        root = data.get("root")
+        if root:
+            root = str(Path(root).resolve())
+        if db is None and root is None:
+            return jsonify({"error": "missing 'root'"}), 400
+        d = _get_db(root)
+        store = ObservationStore(d)
         content = data.get("content")
         if not content:
             return jsonify({"error": "missing 'content'"}), 400
@@ -166,7 +198,10 @@ def create_app(db: Database | None = None) -> Flask:
 
     @app.route("/observations")
     def list_observations():
-        d = _get_db()
+        root = request.args.get("root")
+        if root:
+            root = str(Path(root).resolve())
+        d = _get_db(root)
         store = ObservationStore(d)
         node_id = request.args.get("node_id")
         tag = request.args.get("tag")
@@ -179,7 +214,10 @@ def create_app(db: Database | None = None) -> Flask:
 
     @app.route("/observations/<int:obs_id>", methods=["DELETE"])
     def delete_observation(obs_id):
-        d = _get_db()
+        root = request.args.get("root")
+        if root:
+            root = str(Path(root).resolve())
+        d = _get_db(root)
         store = ObservationStore(d)
         if store.delete(obs_id):
             return jsonify({"deleted": True})
@@ -189,7 +227,10 @@ def create_app(db: Database | None = None) -> Flask:
 
     @app.route("/resume")
     def resume():
-        d = _get_db()
+        root = request.args.get("root")
+        if root:
+            root = str(Path(root).resolve())
+        d = _get_db(root)
         budget = request.args.get("budget", 4000, type=int)
         hours = request.args.get("hours", 24, type=int)
         md = generate_resume(d, budget=budget, hours=hours)
@@ -246,7 +287,10 @@ def create_app(db: Database | None = None) -> Flask:
 
     @app.route("/status")
     def status():
-        d = _get_db()
+        root = request.args.get("root")
+        if root:
+            root = str(Path(root).resolve())
+        d = _get_db(root)
         stats = d.stats()
         watcher_info = {
             root: {"running": w.is_running}

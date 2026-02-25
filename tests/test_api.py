@@ -217,6 +217,77 @@ class TestStatus:
         assert "nodes" in data["db_stats"]
 
 
+class TestProjectIsolation:
+    """Per-project DB isolation: observations don't leak between projects."""
+
+    def test_observations_isolated_by_root(self, tmp_path):
+        """Two projects get separate DBs; observations don't cross over."""
+        from context_graph.api import _project_db_path
+
+        proj_a = tmp_path / "project_a"
+        proj_b = tmp_path / "project_b"
+        proj_a.mkdir()
+        proj_b.mkdir()
+
+        app = create_app()  # no injected db → production-style routing
+        app.config["TESTING"] = True
+        c = app.test_client()
+
+        root_a = str(proj_a.resolve())
+        root_b = str(proj_b.resolve())
+
+        # Post observation to project A
+        resp = c.post("/observations", json={
+            "content": "only in A", "root": root_a, "tags": ["a"],
+        })
+        assert resp.status_code == 201
+
+        # Post observation to project B
+        resp = c.post("/observations", json={
+            "content": "only in B", "root": root_b, "tags": ["b"],
+        })
+        assert resp.status_code == 201
+
+        # GET observations scoped to project A
+        resp_a = c.get(f"/observations?root={root_a}")
+        data_a = resp_a.get_json()
+        assert len(data_a) == 1
+        assert data_a[0]["content"] == "only in A"
+
+        # GET observations scoped to project B
+        resp_b = c.get(f"/observations?root={root_b}")
+        data_b = resp_b.get_json()
+        assert len(data_b) == 1
+        assert data_b[0]["content"] == "only in B"
+
+        # Resume scoped to project A only shows A's data
+        resp_r = c.get(f"/resume?root={root_a}")
+        assert resp_r.status_code == 200
+        resume_text = resp_r.get_json()["resume"]
+        assert "only in A" in resume_text
+        assert "only in B" not in resume_text
+
+    def test_post_observation_requires_root_in_production(self):
+        """POST /observations without root and without injected db → 400."""
+        app = create_app()  # no injected db
+        app.config["TESTING"] = True
+        c = app.test_client()
+        resp = c.post("/observations", json={"content": "no root"})
+        assert resp.status_code == 400
+        assert "root" in resp.get_json()["error"]
+
+    def test_db_path_scheme(self):
+        """_project_db_path produces expected hash-based path."""
+        from context_graph.api import _project_db_path
+        import hashlib
+
+        root = "/home/user/my_project"
+        expected_hash = hashlib.sha256(root.encode()).hexdigest()[:16]
+        path = _project_db_path(root)
+        assert expected_hash in str(path)
+        assert path.name == "context.db"
+
+
 class TestProjects:
     def test_register_project(self, app_with_data):
         app, db, proj = app_with_data

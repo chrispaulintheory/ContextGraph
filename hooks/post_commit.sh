@@ -11,11 +11,12 @@ _post_observation() {
 
     # Use Python for safe JSON encoding of the commit message
     PAYLOAD=$(python3 -c "
-import json, sys
+import json, os, sys
 print(json.dumps({
     'content': f'Commit {sys.argv[1]}: {sys.argv[2]}  Files: {sys.argv[3]}',
     'source': 'git',
     'tags': ['git', 'commit'],
+    'root': os.getcwd(),
 }))
 " "$SHA" "$MESSAGE" "$FILES" 2>/dev/null)
 

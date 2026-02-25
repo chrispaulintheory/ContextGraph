@@ -9,7 +9,7 @@ INPUT=$(cat)
 
 # Extract the tool name and file path using Python for safe JSON parsing
 PAYLOAD=$(python3 -c "
-import json, sys
+import json, os, sys
 try:
     data = json.loads(sys.argv[1])
     tool = data.get('tool_name', '')
@@ -23,6 +23,7 @@ try:
         'content': f'Edited: {file_path}',
         'source': 'hook',
         'tags': ['hook', 'edit'],
+        'root': os.getcwd(),
     }))
 except Exception:
     sys.exit(0)
