@@ -45,6 +45,18 @@ Search for functions, classes, or methods by their short name to get their absol
 ### 3. Get Context Capsules
 Once you have a node_id, fetch its full context (signature, parent class, dependencies, and dependents):
 `curl "http://127.0.0.1:5577/capsule/<node_id>?depth=1"`
+
+### 4. Resume a Session
+At the start of a new chat, catch up on recent activity:
+`curl "http://127.0.0.1:5577/resume?hours=24&budget=4000"`
+
+### 5. Save Decisions
+When you make an architectural decision, hit a blocker, or reach a conclusion, save it:
+`curl -X POST http://127.0.0.1:5577/observations -H "Content-Type: application/json" -d '{"content": "<what you decided and why>", "source": "claude", "tags": ["decision"]}'`
+
+### 6. View File Structure
+To understand a file without reading the full source:
+`curl "http://127.0.0.1:5577/skeleton?file=<path>"`
 ```
 
 ## Test
