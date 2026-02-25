@@ -1,0 +1,31 @@
+[project]
+name = "context-graph"
+version = "0.1.0"
+description = "Local context engine to reduce LLM token usage"
+requires-python = ">=3.12"
+dependencies = [
+    "tree-sitter>=0.24",
+    "tree-sitter-python>=0.23",
+    "flask>=3.1",
+    "watchdog>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=6.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/context_graph"]
+
+[project.scripts]
+context-graph = "context_graph.api:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
