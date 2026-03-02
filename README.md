@@ -1,6 +1,6 @@
 # ContextGraph
 
-Local Python context engine that reduces LLM token usage. Indexes your codebase (AST signatures, dependency graphs, skeletons) and persists session memory so you don't have to re-explain your project every time you start a new chat.
+Local multi-language context engine that reduces LLM token usage. Indexes your codebase (AST signatures, dependency graphs, skeletons) and persists session memory so you don't have to re-explain your project every time you start a new chat.
 
 ## Install
 
@@ -64,7 +64,7 @@ When you make an architectural decision, hit a blocker, or reach a conclusion, s
 
 ### 6. View File Structure
 To understand a file without reading the full source:
-`curl "http://127.0.0.1:5577/skeleton?file=<path>"`
+`curl "http://127.0.0.1:5577/skeleton?file=<path>&root=$(pwd)"`
 ```
 
 ## Test
