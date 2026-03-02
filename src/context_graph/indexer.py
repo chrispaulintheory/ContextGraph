@@ -164,6 +164,24 @@ class Indexer:
         self.db.delete_edges_for_file(fp_str)
         self.db.delete_indexed_file(fp_str)
 
+    def _find_defs_in_compound(
+        self,
+        node: tree_sitter.Node,
+        source: bytes,
+        parent_id: str,
+        file_path: str,
+        fhash: str,
+        now: float,
+        nodes: list[NodeRecord],
+        edges: list[EdgeRecord],
+    ) -> None:
+        """Recurse into compound statement children to find nested function/class defs."""
+        for child in node.children:
+            if child.type == "block":
+                self._extract_symbols(child, source, parent_id, file_path, fhash, now, nodes, edges)
+            else:
+                self._find_defs_in_compound(child, source, parent_id, file_path, fhash, now, nodes, edges)
+
     def _extract_symbols(
         self,
         parent_node: tree_sitter.Node,
@@ -272,6 +290,10 @@ class Indexer:
                 # Recurse into class body
                 if body:
                     self._extract_symbols(body, source, node_id, file_path, fhash, now, nodes, edges)
+
+            else:
+                # Compound statement (with/if/for/while/try/etc.) — recurse to find nested defs
+                self._find_defs_in_compound(actual, source, parent_id, file_path, fhash, now, nodes, edges)
 
     def _extract_imports(
         self,

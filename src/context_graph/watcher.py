@@ -11,9 +11,19 @@ from watchdog.observers import Observer
 
 from .db import Database
 from .indexer import Indexer
+from .indexer_swift import SwiftIndexer
 
-# Directories to ignore
-_IGNORE_DIRS = {".venv", "__pycache__", ".context_graph", "node_modules", ".git"}
+# Extensions handled by each indexer
+_EXTENSION_MAP = {
+    ".py": Indexer,
+    ".swift": SwiftIndexer,
+}
+
+# Directories to ignore (union of Python and Swift ignore sets)
+_IGNORE_DIRS = {
+    ".venv", "__pycache__", ".context_graph", "node_modules", ".git",
+    "Pods", "Carthage", ".build", "DerivedData", "xcuserdata",
+}
 
 
 def _should_ignore(path: str) -> bool:
@@ -21,10 +31,37 @@ def _should_ignore(path: str) -> bool:
     return any(p in _IGNORE_DIRS or p.startswith(".") for p in parts)
 
 
+class _MultiIndexer:
+    """Dispatches index/remove calls to the appropriate language indexer."""
+
+    def __init__(self, db: Database, project_root: str):
+        self._indexers: dict[str, Indexer | SwiftIndexer] = {
+            ext: cls(db, project_root)
+            for ext, cls in _EXTENSION_MAP.items()
+        }
+
+    def index_file(self, file_path: str | Path, force: bool = False) -> list:
+        ext = Path(file_path).suffix
+        indexer = self._indexers.get(ext)
+        return indexer.index_file(file_path, force=force) if indexer else []
+
+    def remove_file(self, file_path: str | Path) -> None:
+        ext = Path(file_path).suffix
+        indexer = self._indexers.get(ext)
+        if indexer:
+            indexer.remove_file(file_path)
+
+    def index_project(self, force: bool = False) -> int:
+        total = 0
+        for indexer in self._indexers.values():
+            total += indexer.index_project(force=force)
+        return total
+
+
 class _DebouncedHandler(FileSystemEventHandler):
     """Debounces rapid file changes before triggering re-index."""
 
-    def __init__(self, indexer: Indexer, delay: float = 0.5):
+    def __init__(self, indexer: _MultiIndexer, delay: float = 0.5):
         self.indexer = indexer
         self.delay = delay
         self._pending: dict[str, threading.Timer] = {}
@@ -51,22 +88,21 @@ class _DebouncedHandler(FileSystemEventHandler):
             timer.start()
 
     def on_created(self, event: FileSystemEvent) -> None:
-        if event.is_directory or not event.src_path.endswith(".py"):
+        if event.is_directory or Path(event.src_path).suffix not in _EXTENSION_MAP:
             return
-        rel = Path(event.src_path)
-        if _should_ignore(str(rel)):
+        if _should_ignore(str(event.src_path)):
             return
         self._schedule(event.src_path, "index")
 
     def on_modified(self, event: FileSystemEvent) -> None:
-        if event.is_directory or not event.src_path.endswith(".py"):
+        if event.is_directory or Path(event.src_path).suffix not in _EXTENSION_MAP:
             return
         if _should_ignore(str(event.src_path)):
             return
         self._schedule(event.src_path, "index")
 
     def on_deleted(self, event: FileSystemEvent) -> None:
-        if event.is_directory or not event.src_path.endswith(".py"):
+        if event.is_directory or Path(event.src_path).suffix not in _EXTENSION_MAP:
             return
         if _should_ignore(str(event.src_path)):
             return
@@ -80,11 +116,11 @@ class _DebouncedHandler(FileSystemEventHandler):
 
 
 class ProjectWatcher:
-    """Watches a project directory for Python file changes."""
+    """Watches a project directory for Python and Swift file changes."""
 
     def __init__(self, db: Database, project_root: str | Path):
         self.project_root = str(Path(project_root).resolve())
-        self.indexer = Indexer(db, self.project_root)
+        self.indexer = _MultiIndexer(db, self.project_root)
         self._handler = _DebouncedHandler(self.indexer)
         self._observer = Observer()
         self._running = False
