@@ -22,14 +22,14 @@ def _project_db_path(root: str) -> Path:
     return Path.home() / ".context_graph" / "projects" / h / "context.db"
 
 
-from .tokens import TokenStats, estimate_tokens
+from .tokens import TokenStats, estimate_tokens, estimate_tokens_from_chars
 
 
 def _get_project_efficiency(db: Database) -> dict:
     """Calculate aggregate token savings for the entire project.
-    
-    This is an estimate based on the delta between full node bodies
-    and their signatures/docstrings.
+
+    Estimates original size from line count + signature floor, and
+    optimized size from actual signature + docstring lengths in the DB.
     """
     nodes = db.list_nodes(external=False)
     if not nodes:
@@ -39,16 +39,16 @@ def _get_project_efficiency(db: Database) -> dict:
     total_optimized = 0
 
     for node in nodes:
-        # Node body original vs optimized (signature + docstring)
-        # We estimate original from line count if we don't want to read every file
-        # But for accuracy, let's just use the metadata we have.
-        original_estimate = (node.line_end - node.line_start + 1) * 35 # ~35 chars per line avg
         sig_len = len(node.signature or "")
         doc_len = len(node.docstring or "")
-        optimized_estimate = sig_len + doc_len + 50 # +50 for markdown overhead
+        # Original: line-count estimate, floored by the signature itself
+        line_char_estimate = (node.line_end - node.line_start + 1) * 35
+        original_chars = max(sig_len, line_char_estimate)
+        # Optimized: signature + docstring + markdown overhead
+        optimized_chars = sig_len + doc_len + 50
 
-        total_original += estimate_tokens("x" * int(original_estimate))
-        total_optimized += estimate_tokens("x" * int(optimized_estimate))
+        total_original += estimate_tokens_from_chars(original_chars)
+        total_optimized += estimate_tokens_from_chars(optimized_chars)
 
     saved = max(0, total_original - total_optimized)
     reduction = (saved / total_original * 100) if total_original > 0 else 0.0

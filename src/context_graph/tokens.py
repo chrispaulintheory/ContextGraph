@@ -6,22 +6,21 @@ from dataclasses import dataclass
 
 
 def estimate_tokens(text: str) -> int:
-    """Estimate tokens in a text.
+    """Estimate tokens in text using a ~3.5 chars/token heuristic.
 
-    Uses a slightly more sophisticated heuristic than len // 4:
-    - ~1 token per 4 characters (standard)
-    - Adjust for whitespaces (which are often merged/skipped in some tokenizers)
-    - Adjust for special symbols.
+    Code skews tighter than prose (more punctuation, short identifiers),
+    so 3.5 chars/token is more accurate than the common 4.0.
     """
     if not text:
         return 0
-    # Standard heuristic is 4 characters per token for English.
-    # Code is denser and has more punctuation.
-    # Let's use a hybrid of word count and char count.
-    words = text.split()
-    word_estimate = len(words) * 1.3  # Tokens are often slightly more than words
-    char_estimate = len(text) / 3.8  # Code has lots of short punctuation tokens
-    return int((word_estimate + char_estimate) / 2)
+    return max(1, int(len(text) / 3.5))
+
+
+def estimate_tokens_from_chars(char_count: int) -> int:
+    """Estimate tokens directly from a character count."""
+    if char_count <= 0:
+        return 0
+    return max(1, int(char_count / 3.5))
 
 
 @dataclass(frozen=True)
