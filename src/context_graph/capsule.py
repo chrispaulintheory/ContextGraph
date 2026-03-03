@@ -7,18 +7,14 @@ from .graph import Graph
 from .models import NodeRecord
 from .observations import ObservationStore
 from .skeletonizer import skeletonize
-
-
-def _estimate_tokens(text: str) -> int:
-    """Rough token estimate: ~4 chars per token."""
-    return len(text) // 4
+from .tokens import TokenStats, estimate_tokens
 
 
 def generate_capsule(
     db: Database,
     node_id: str,
     depth: int = 1,
-) -> str | None:
+) -> tuple[str, TokenStats] | None:
     """Generate a context capsule markdown document for a node.
 
     Includes: pivot signature, parent class skeleton, depth-1
@@ -31,6 +27,18 @@ def generate_capsule(
     graph = Graph(db)
     obs_store = ObservationStore(db)
     sections: list[str] = []
+
+    # TRACK ORIGINAL TOKENS
+    # Original is the full content of the pivot and its parent (if applicable)
+    original_text = ""
+    try:
+        with open(node.file_path) as f:
+            file_lines = f.readlines()
+        # line_start/end are usually 1-indexed
+        node_source = "".join(file_lines[node.line_start - 1 : node.line_end])
+        original_text += node_source
+    except (OSError, IndexError):
+        pass
 
     # Header
     sections.append(f"# Context Capsule: `{node.id}`\n")
@@ -62,11 +70,11 @@ def generate_capsule(
         parent = db.get_node(node.parent_id)
         if parent and parent.kind == "class":
             sections.append("## Parent Class\n")
-            # Show skeleton of parent class file section
             try:
                 with open(parent.file_path) as f:
-                    source = f.read()
-                skeleton = skeletonize(source)
+                    parent_full_source = f.read()
+                original_text += parent_full_source
+                skeleton = skeletonize(parent_full_source)
                 # Extract just the class section
                 lines = skeleton.split("\n")
                 class_lines = []
@@ -76,7 +84,6 @@ def generate_capsule(
                         in_class = True
                     if in_class:
                         class_lines.append(line)
-                        # Stop when we hit next top-level definition
                         if class_lines and line and not line[0].isspace() and not line.startswith("class"):
                             class_lines.pop()
                             break
@@ -124,7 +131,10 @@ def generate_capsule(
 
     # Token estimate
     content = "\n".join(sections)
-    tokens = _estimate_tokens(content)
-    content += f"\n---\n*Estimated tokens: ~{tokens}*\n"
+    stats = TokenStats(
+        original=estimate_tokens(original_text),
+        optimized=estimate_tokens(content),
+    )
+    content += f"\n---\n*Token Savings: {stats.saved} tokens ({stats.percentage:.1f}% reduction)*\n"
 
-    return content
+    return content, stats

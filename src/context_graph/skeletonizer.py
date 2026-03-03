@@ -7,6 +7,8 @@ from pathlib import Path
 import tree_sitter
 import tree_sitter_python as tspython
 
+from .tokens import TokenStats, estimate_tokens
+
 _LANGUAGE = tree_sitter.Language(tspython.language())
 _PARSER = tree_sitter.Parser(_LANGUAGE)
 
@@ -30,9 +32,25 @@ def skeletonize(source: str) -> str:
     return result.decode("utf-8")
 
 
+def skeletonize_with_stats(source: str) -> tuple[str, TokenStats]:
+    """Skeletonize source and return the skeletonized text and token statistics."""
+    skeleton = skeletonize(source)
+    stats = TokenStats(
+        original=estimate_tokens(source),
+        optimized=estimate_tokens(skeleton),
+    )
+    return skeleton, stats
+
+
 def skeletonize_file(file_path: str | Path) -> str:
     """Skeletonize a file from disk."""
     return skeletonize(Path(file_path).read_text())
+
+
+def skeletonize_file_with_stats(file_path: str | Path) -> tuple[str, TokenStats]:
+    """Skeletonize a file from disk and return token statistics."""
+    source = Path(file_path).read_text()
+    return skeletonize_with_stats(source)
 
 
 def _collect_replacements(

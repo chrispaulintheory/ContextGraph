@@ -15,16 +15,13 @@ source .venv/bin/activate && context-graph
 uv pip install -e ".[dev]"
 pytest
 
-# Run a single test file
-pytest tests/test_api.py
-
-# Run a single test
-pytest tests/test_indexer.py::test_function_name
+# Check Project Token Efficiency
+curl "http://127.0.0.1:5577/status?root=$(pwd)"
 ```
 
 ## Architecture
 
-ContextGraph is a local HTTP service (Flask, port 5577) that indexes codebases via AST and serves structural context to LLMs instead of raw file contents. Each project gets its own SQLite database at `~/.context_graph/projects/<sha256_of_root[:16]>/context.db`.
+ContextGraph is a local HTTP service (Flask, port 5577) that indexes codebases via AST and serves structural context to LLMs instead of raw file contents. Responses include a `token_stats` object to track optimization (Original vs. Optimized tokens).
 
 ### Module map
 

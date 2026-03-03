@@ -12,7 +12,7 @@ from .db import Database
 from .graph import Graph
 from .observations import ObservationStore
 from .resume import generate_resume
-from .skeletonizer import skeletonize_file
+from .skeletonizer import skeletonize_file_with_stats
 from .watcher import ProjectWatcher
 
 
@@ -20,6 +20,44 @@ def _project_db_path(root: str) -> Path:
     """Return per-project DB path: ~/.context_graph/projects/<hash>/context.db"""
     h = hashlib.sha256(root.encode()).hexdigest()[:16]
     return Path.home() / ".context_graph" / "projects" / h / "context.db"
+
+
+from .tokens import TokenStats, estimate_tokens
+
+
+def _get_project_efficiency(db: Database) -> dict:
+    """Calculate aggregate token savings for the entire project.
+    
+    This is an estimate based on the delta between full node bodies
+    and their signatures/docstrings.
+    """
+    nodes = db.list_nodes(external=False)
+    if not nodes:
+        return {"total_saved": 0, "avg_reduction": 0.0}
+
+    total_original = 0
+    total_optimized = 0
+
+    for node in nodes:
+        # Node body original vs optimized (signature + docstring)
+        # We estimate original from line count if we don't want to read every file
+        # But for accuracy, let's just use the metadata we have.
+        original_estimate = (node.line_end - node.line_start + 1) * 35 # ~35 chars per line avg
+        sig_len = len(node.signature or "")
+        doc_len = len(node.docstring or "")
+        optimized_estimate = sig_len + doc_len + 50 # +50 for markdown overhead
+
+        total_original += estimate_tokens("x" * int(original_estimate))
+        total_optimized += estimate_tokens("x" * int(optimized_estimate))
+
+    saved = max(0, total_original - total_optimized)
+    reduction = (saved / total_original * 100) if total_original > 0 else 0.0
+
+    return {
+        "total_potential_saved": saved,
+        "avg_reduction_percent": round(reduction, 1),
+        "status": "🚀 Optimized" if reduction > 50 else "📈 Improving"
+    }
 
 
 def create_app(db: Database | None = None) -> Flask:
@@ -152,8 +190,17 @@ def create_app(db: Database | None = None) -> Flask:
         path = Path(file_path)
         if not path.is_file():
             return jsonify({"error": "file not found"}), 404
-        result = skeletonize_file(path)
-        return jsonify({"file": str(path), "skeleton": result})
+        result, stats = skeletonize_file_with_stats(path)
+        return jsonify({
+            "file": str(path),
+            "skeleton": result,
+            "token_stats": {
+                "original": stats.original,
+                "optimized": stats.optimized,
+                "saved": stats.saved,
+                "percentage": round(stats.percentage, 1),
+            }
+        })
 
     # ── Capsule ────────────────────────────────────────────
 
@@ -167,7 +214,17 @@ def create_app(db: Database | None = None) -> Flask:
         result = generate_capsule(d, node_id, depth=depth)
         if result is None:
             return jsonify({"error": "node not found"}), 404
-        return jsonify({"node_id": node_id, "capsule": result})
+        md, stats = result
+        return jsonify({
+            "node_id": node_id,
+            "capsule": md,
+            "token_stats": {
+                "original": stats.original,
+                "optimized": stats.optimized,
+                "saved": stats.saved,
+                "percentage": round(stats.percentage, 1),
+            }
+        })
 
     # ── Observations ───────────────────────────────────────
 
@@ -292,12 +349,14 @@ def create_app(db: Database | None = None) -> Flask:
             root = str(Path(root).resolve())
         d = _get_db(root)
         stats = d.stats()
+        efficiency = _get_project_efficiency(d)
         watcher_info = {
             root: {"running": w.is_running}
             for root, w in projects.items()
         }
         return jsonify({
             "db_stats": stats,
+            "efficiency": efficiency,
             "watchers": watcher_info,
         })
 

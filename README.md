@@ -20,6 +20,27 @@ Server starts at `http://127.0.0.1:5577`.
 
 Each project gets its own SQLite database at `~/.context_graph/projects/<hash>/context.db`. The `root` parameter (your project's absolute path) is the routing key — pass it when registering, and include it on every request so data stays isolated.
 
+## Token Savings
+
+ContextGraph is designed to drastically reduce the number of tokens sent to LLMs by using optimized representations (skeletons and capsules) instead of full source files.
+
+Every `/skeleton` and `/capsule` response now includes a `token_stats` object:
+
+```json
+{
+  "token_stats": {
+    "original": 1250,
+    "optimized": 145,
+    "saved": 1105,
+    "percentage": 88.4
+  }
+}
+```
+
+- **Original**: Estimated tokens in the full source code (e.g., the complete function body or parent class).
+- **Optimized**: Actual tokens in the generated markdown or skeleton.
+- **Saved**: Total tokens you *didn't* have to send to the LLM.
+
 ## Key endpoints
 
 All GET endpoints accept `?root=/path/to/project` to scope queries. `POST /observations` takes `"root"` in the JSON body.
@@ -65,6 +86,11 @@ When you make an architectural decision, hit a blocker, or reach a conclusion, s
 ### 6. View File Structure
 To understand a file without reading the full source:
 `curl "http://127.0.0.1:5577/skeleton?file=<path>&root=$(pwd)"`
+
+### 7. Check Efficiency
+See how much context space you've saved in this project:
+`curl "http://127.0.0.1:5577/status?root=$(pwd)"`
+*(Look for the "efficiency" object to see total tokens saved!)*
 ```
 
 ## Test

@@ -25,28 +25,32 @@ def capsule_db(tmp_path):
 
 def test_capsule_for_function(capsule_db):
     db, proj = capsule_db
-    capsule = generate_capsule(db, "simple_module.greet")
-    assert capsule is not None
+    result = generate_capsule(db, "simple_module.greet")
+    assert result is not None
+    capsule, stats = result
     assert "# Context Capsule: `simple_module.greet`" in capsule
     assert "**Kind:** function" in capsule
     assert "Signature" in capsule
     assert "def greet" in capsule
     assert "Docstring" in capsule
-    assert "Estimated tokens" in capsule
+    assert "Token Savings" in capsule
+    assert stats.optimized > 0
 
 
 def test_capsule_for_class(capsule_db):
     db, proj = capsule_db
-    capsule = generate_capsule(db, "class_with_methods.Child")
-    assert capsule is not None
+    result = generate_capsule(db, "class_with_methods.Child")
+    assert result is not None
+    capsule, stats = result
     assert "class" in capsule.lower()
     assert "inherits" in capsule.lower() or "Dependencies" in capsule
 
 
 def test_capsule_for_method_with_parent(capsule_db):
     db, proj = capsule_db
-    capsule = generate_capsule(db, "class_with_methods.Child.greet")
-    assert capsule is not None
+    result = generate_capsule(db, "class_with_methods.Child.greet")
+    assert result is not None
+    capsule, stats = result
     assert "Parent Class" in capsule or "parent_id" in capsule.lower() or "class_with_methods.Child" in capsule
 
 
@@ -59,13 +63,16 @@ def test_capsule_with_observations(capsule_db):
     db, _ = capsule_db
     store = ObservationStore(db)
     store.add("This function is slow", node_id="simple_module.greet", tags=["perf"])
-    capsule = generate_capsule(db, "simple_module.greet")
+    result = generate_capsule(db, "simple_module.greet")
+    assert result is not None
+    capsule, stats = result
     assert "Observations" in capsule
     assert "This function is slow" in capsule
 
 
 def test_capsule_with_dependencies(capsule_db):
     db, _ = capsule_db
-    capsule = generate_capsule(db, "simple_module")
-    assert capsule is not None
+    result = generate_capsule(db, "simple_module")
+    assert result is not None
+    capsule, stats = result
     assert "Dependencies" in capsule

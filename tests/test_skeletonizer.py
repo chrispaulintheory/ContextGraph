@@ -1,6 +1,18 @@
 """Tests for skeletonizer."""
 
-from context_graph.skeletonizer import skeletonize
+from context_graph.skeletonizer import skeletonize, skeletonize_with_stats
+
+
+def test_skeletonize_with_stats():
+    source = '''def foo(x: int) -> str:
+    """A docstring."""
+    return str(x)
+'''
+    result, stats = skeletonize_with_stats(source)
+    assert "def foo(x: int) -> str:" in result
+    assert stats.original > stats.optimized
+    assert stats.saved > 0
+    assert stats.percentage > 0
 
 
 def test_simple_function():
